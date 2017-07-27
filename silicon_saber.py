@@ -24,8 +24,9 @@ from PyQt4.QtCore import QSettings, QTranslator, qVersion, QCoreApplication, QVa
 from PyQt4.QtGui import QAction, QIcon
 
 from qgis.core import *
+from qgis.gui import QgsMessageBar
 import subprocess
-import os
+import os, sys
 import pyodbc
 
 # Initialize Qt resources from file resources.py
@@ -73,21 +74,21 @@ class SiliconSaber:
         self.toolbar.setObjectName(u'SiliconSaber')
         self.count = 0
         
-        self.column_names = ["id", "mapId", "layer", "level", "active", "vertices", "elev",
+        self.column_names = ["id", "mapId", "layer", "level", "active", "vertices", "numVert", "elev",
             "centerGvt", "ombb", "orient", "desc", "access", "color", "trnp", "outline", "scaling", 
             "name", "number", "geoId", "roleId", "funcId", "area", "length", "centroid"]
             
         self.column_types = [QVariant.Int, QVariant.Int, QVariant.Int, QVariant.Int, QVariant.Int,
-            QVariant.String, QVariant.Double, QVariant.String, QVariant.String, QVariant.Double, 
+            QVariant.String, QVariant.Int, QVariant.Double, QVariant.String, QVariant.String, QVariant.Double, 
             QVariant.String, QVariant.Double, QVariant.String, QVariant.Int, QVariant.Double,
             QVariant.Double, QVariant.String, QVariant.Int, QVariant.Int, QVariant.Int, 
             QVariant.Int, QVariant.Double, QVariant.Double, QVariant.String]
             
-        self.column_stypes = ["integer", "integer", "integer", "integer", "integer", "string", 
+        self.column_stypes = ["integer", "integer", "integer", "integer", "integer", "string", "integer",
             "double", "string", "string", "double", "string", "double", "string", "integer", "double", "double", "string", 
             "integer", "integer", "integer", "integer", "double", "double", "string"]
             
-        self.col_len = [10, 10, 10, 10, 10, 1000, 20, 100, 100, 20, 100, 20, 100, 10, 20, 20, 100,
+        self.col_len = [10, 10, 10, 10, 10, 1000, 10, 20, 100, 1000, 20, 100, 20, 100, 10, 20, 20, 100,
             10, 10, 10, 10, 20, 20, 100]
 
     # noinspection PyMethodMayBeStatic
@@ -239,7 +240,6 @@ class SiliconSaber:
 
 
     def export(self):
-        """Run method that performs all the real work"""
         self.dlg.layerList.clear()
         layers = self.iface.legendInterface().layers()
         layer_list = []
@@ -249,26 +249,29 @@ class SiliconSaber:
                 layer_list.append(layer.name())
         self.dlg.layerList.addItems(layer_list)
         
-        # show the dialog
         self.dlg.show()
-        # Run the dialog event loop
         result = self.dlg.exec_()
-        # See if OK was pressed
+        
         if result:
-            # Do something useful here - delete the line containing pass and
-            # substitute with your code.
-            
-            selectedlayerindex = self.dlg.layerList.currentIndex()
-            selectedLayer = layers[selectedlayerindex]
-            layeruri = selectedLayer.dataProvider().dataSourceUri().split("|")[0]
-            
-            uri = "MSSQL:server=%s;database=%s;trusted_connection=yes" % (self.dlg.dbServer.text(), 
-                  self.dlg.dbName.text())
-            ogrstring = "ogr2ogr.exe -lco UPLOAD_GEOM_FORMAT=wkt -f MSSQLSpatial" + \
-                        " \"%s\" \"%s\" -overwrite" % (uri, layeruri)
-                        
-            print(ogrstring)
-            subprocess.call(ogrstring)
+            try:
+                selectedlayerindex = self.dlg.layerList.currentIndex()
+                selectedLayer = layers[selectedlayerindex]
+                layeruri = selectedLayer.dataProvider().dataSourceUri().split("|")[0]
+                
+                uri = "MSSQL:server=%s;database=%s;trusted_connection=yes" % (self.dlg.dbServer.text(), 
+                      self.dlg.dbName.text())
+                ogrstring = "ogr2ogr.exe -lco UPLOAD_GEOM_FORMAT=wkt -f MSSQLSpatial" + \
+                            " \"%s\" \"%s\" -overwrite" % (uri, layeruri)
+                            
+                subprocess.call(ogrstring)
+                self.iface.messageBar().pushMessage("INFO", "Export was successful!", 
+                    level=QgsMessageBar.INFO)
+                    
+            except Exception, e:
+                errormsg = "Export table failed! %s" % str(e)
+                self.iface.messageBar().pushMessage("ERROR", errormsg, 
+                    level=QgsMessageBar.CRITICAL)
+                
 
     def compute(self):
         """Run method that performs all the real work"""
@@ -281,140 +284,149 @@ class SiliconSaber:
                 layer_list.append(layer.name())
         self.dlgcompute.layerList.addItems(layer_list)
         
-        # show the dialog
+        # show the dialog and wait if OK is pressed
         self.dlgcompute.show()
-        # Run the dialog event loop
         result = self.dlgcompute.exec_()
-        # See if OK was pressed
+
         if result:
-            # Do something useful here - delete the line containing pass and
-            # substitute with your code.
-            
-            selectedlayerindex = self.dlgcompute.layerList.currentIndex()
-            selectedLayer = layers[selectedlayerindex]
-            
-            pr = selectedLayer.dataProvider()
-            caps = pr.capabilities()
-            
-            fieldnames = [field.name() for field in pr.fields()]
-            print(fieldnames)
-            
-            for col_idx in range(0, len(self.column_names)):
-                if fieldnames[col_idx] not in fieldnames:
-                    field = QgsField(self.column_names[col_idx], self.column_types[col_idx], 
-                            self.column_stypes[col_idx], self.col_len[col_idx], 3)
-                    pr.addAttributes([field])
+            try:
+                selectedlayerindex = self.dlgcompute.layerList.currentIndex()
+                selectedLayer = layers[selectedlayerindex]
                 
-            selectedLayer.updateFields()
+                pr = selectedLayer.dataProvider()
+                
+                fieldnames = [field.name() for field in pr.fields()]
+                
+                # Create fields if not yet there
+                for col_idx in range(0, len(self.column_names)):
+                    if fieldnames[col_idx] not in fieldnames:
+                        field = QgsField(self.column_names[col_idx], self.column_types[col_idx], 
+                                self.column_stypes[col_idx], self.col_len[col_idx], 3)
+                        pr.addAttributes([field])
+                    
+                selectedLayer.updateFields()
+                
+                # Update attribute value per feature
+                selectedLayer.startEditing()
+                count = 0
+                for feat in selectedLayer.getFeatures():
+                    count += 1
+                    id = feat.id()
+                    if feat["id"] is not None:
+                        selectedLayer.changeAttributeValue(id, self.column_names.index("id"), count)
+                    selectedLayer.changeAttributeValue(id, self.column_names.index("vertices"), 
+                        str(feat.geometry().asPolygon()[0]))
+                    selectedLayer.changeAttributeValue(id, self.column_names.index("numVert"), 
+                        len(feat.geometry().asPolygon()[0]))
+                    selectedLayer.changeAttributeValue(id, self.column_names.index("area"), 
+                        feat.geometry().area())
+                    selectedLayer.changeAttributeValue(id, self.column_names.index("length"), 
+                        feat.geometry().length())
+                    selectedLayer.changeAttributeValue(id, self.column_names.index("centroid"), 
+                        str(feat.geometry().centroid().asPoint()))
+                
+                selectedLayer.commitChanges()
+                
+                # Computation of OMBB
+                by_feature = True
+                dir_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tempfiles",
+                           "ombb.shp")
+                selectedUri = selectedLayer.dataProvider().dataSourceUri().split("|")[0]
+                
+                output = processing.runalg("qgis:orientedminimumboundingbox", selectedUri, by_feature,
+                         dir_path)
+                         
+                vl = QgsVectorLayer(dir_path, "OMBB Output", "ogr")
+                
+                selectedLayer.startEditing()
+                for feat in vl.getFeatures():
+                    id = feat.id()
+                    selectedLayer.changeAttributeValue(id, self.column_names.index("ombb"), 
+                        str(feat.geometry().asPolygon()[0]))
+                    selectedLayer.changeAttributeValue(id, self.column_names.index("orient"),
+                        feat["ANGLE"])
+
+                selectedLayer.commitChanges()
             
-            selectedLayer.startEditing()
-            count = 0
-            for feat in selectedLayer.getFeatures():
-                count += 1
-                id = feat.id()
-                selectedLayer.changeAttributeValue(id, self.column_names.index("id"), count)
-                selectedLayer.changeAttributeValue(id, self.column_names.index("vertices"), 
-                    str(feat.geometry().asPolygon()[0]))
-                selectedLayer.changeAttributeValue(id, self.column_names.index("area"), 
-                    feat.geometry().area())
-                selectedLayer.changeAttributeValue(id, self.column_names.index("length"), 
-                    feat.geometry().length())
-                selectedLayer.changeAttributeValue(id, self.column_names.index("centroid"), 
-                    str(feat.geometry().centroid().asPoint()))
-            
-            selectedLayer.commitChanges()
-            vlayerstring = "Polygon?crs=epsg:4326"
-            vl = QgsVectorLayer(vlayerstring, "Layer 1", "memory")
-            by_feature = True
-            
-            
-            dir_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tempfiles",
-                       "ombb.shp")
-            selectedUri = selectedLayer.dataProvider().dataSourceUri().split("|")[0]
-            
-            print(selectedUri)
-            print(dir_path)
-            
-            output = processing.runalg("qgis:orientedminimumboundingbox", selectedUri, by_feature,
-                     dir_path)
-            print(output)
-            vl = QgsVectorLayer(dir_path, "OMBB Output", "ogr")
-            
-            selectedLayer.startEditing()
-            for feat in vl.getFeatures():
-                id = feat.id()
-                selectedLayer.changeAttributeValue(id, self.column_names.index("ombb"), 
-                    str(feat.geometry().asPolygon()[0]))
-            
-            selectedLayer.commitChanges()
-            # QgsMapLayerRegistry.instance().addMapLayer(vl)
-            
+                # QgsMapLayerRegistry.instance().addMapLayer(vl)
+                self.iface.messageBar().pushMessage("INFO", "Computation is done!", 
+                    level=QgsMessageBar.INFO)
+            except Exception, e:
+                errormsg = "There is an error in the computation! %s" % str(e)
+                self.iface.messageBar().pushMessage("ERROR", errormsg, 
+                    level=QgsMessageBar.CRITICAL)
                 
     def create(self):
         self.dlgcreate.layerList.clear()
         layer_list = ["Point", "LineString", "Polygon"]
         self.dlgcreate.layerList.addItems(layer_list)
         
-        # show the dialog
         self.dlgcreate.show()
-        # Run the dialog event loop
         result = self.dlgcreate.exec_()
-        # See if OK was pressed
         
+        # File name for temporary shapefile
         filename = "temp_%d.shp" % self.count
         self.count += 1
         dir_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tempfiles", filename)
 
         if result:
-            selectedvector = self.dlgcreate.layerList.currentText()
-            vlayerstring = "%s?crs=epsg:4326" %  selectedvector
-            vl = QgsVectorLayer(vlayerstring, "Layer %d" % self.count, "memory")
-            
-            pr = vl.dataProvider()
-            
-            fieldnames = [field.name() for field in pr.fields()]
-            
-            for col_idx in range(0, len(self.column_names)):
-                if col_idx not in fieldnames:
-                    field = QgsField(self.column_names[col_idx], self.column_types[col_idx], 
-                            self.column_stypes[col_idx], self.col_len[col_idx], 3)
-                    pr.addAttributes([field])
+            try:
+                # Create temporary layer in memory
+                selectedvector = self.dlgcreate.layerList.currentText()
+                vlayerstring = "%s?crs=epsg:4326" %  selectedvector
+                vl = QgsVectorLayer(vlayerstring, "Layer %d" % self.count, "memory")
                 
-            vl.updateFields()
+                # Create fields if not yet there
+                pr = vl.dataProvider()
+                fieldnames = [field.name() for field in pr.fields()]
+                for col_idx in range(0, len(self.column_names)):
+                    if col_idx not in fieldnames:
+                        field = QgsField(self.column_names[col_idx], self.column_types[col_idx], 
+                                self.column_stypes[col_idx], self.col_len[col_idx], 3)
+                        pr.addAttributes([field])
+                vl.updateFields()
+                
+                if os.path.isfile(dir_path):
+                    os.remove(dir_path)
+                
+                # Save memory layer as shapefile
+                error = QgsVectorFileWriter.writeAsVectorFormat(vl, dir_path, "CP1250", None, 
+                            "ESRI Shapefile")
+                
+                vl = QgsVectorLayer(dir_path, "Layer %d" % self.count, "ogr")
+                pr = vl.dataProvider()
+                QgsMapLayerRegistry.instance().addMapLayer(vl)
+                self.iface.messageBar().pushMessage("INFO", "Layer %d is created" % self.count, 
+                    level=QgsMessageBar.INFO)
+                
+            except Exception, e:
+                errormsg = "Create Layer Failed! %s" % str(e)
+                self.iface.messageBar().pushMessage("ERROR", errormsg, 
+                    level=QgsMessageBar.CRITICAL)
             
-            if os.path.isfile(dir_path):
-                os.remove(dir_path)
-            
-            error = QgsVectorFileWriter.writeAsVectorFormat(vl, dir_path, "CP1250", None, 
-                        "ESRI Shapefile")
-            
-            vl = QgsVectorLayer(dir_path, "Layer %d" % self.count, "ogr")
-            pr = vl.dataProvider()
-            QgsMapLayerRegistry.instance().addMapLayer(vl)
-            
-    def importtable(self):
-        print(dir(self.dlgimport))
-        
-        # show the dialog
+    def importtable(self):     
         self.dlgimport.show()
-        
-        # Run the dialog event loop
         result = self.dlgimport.exec_()
-        # See if OK was pressed
         if result:
-            # Do something useful here - delete the line containing pass and
-            # substitute with your code.
+            try:
+                uri = "MSSQL:server=%s;database=%s;tables=%s;trusted_connection=yes" % (
+                      self.dlgimport.dbServer.text(), self.dlgimport.dbName.text(), 
+                      self.dlgimport.tableName.text())
+
+                vl = QgsVectorLayer(uri, self.dlgimport.tableName.text(), "ogr")                
+                
+                if vl.isValid():
+                    self.iface.messageBar().pushMessage("INFO", "Import table is successful!", 
+                        level=QgsMessageBar.INFO)
+                    QgsMapLayerRegistry.instance().addMapLayer(vl)
+                else:
+                    self.iface.messageBar().pushMessage("ERROR", "Import table failed!", 
+                        level=QgsMessageBar.CRITICAL)
             
-            uri = "MSSQL:server=%s;database=%s;tables=%s;trusted_connection=yes" % (
-                  self.dlgimport.dbServer.text(), self.dlgimport.dbName.text(), 
-                  self.dlgimport.tableName.text())
-            print(uri)
-            QgsLogger.logMessageToFile(uri)
-            vl = QgsVectorLayer(uri, self.dlgimport.tableName.text(), "ogr")
-            print(vl.isValid())
-            QgsMapLayerRegistry.instance().addMapLayer(vl)
-            
-            print(vl.dataProvider().capabilitiesString())
+            except Exception, e:
+                errormsg = "Import table failed! %s" % str(e)
+                self.iface.messageBar().pushMessage("ERROR", errormsg, 
+                    level=QgsMessageBar.CRITICAL)
             
     def commitlayer(self):
         self.dlgcommit.layerList.clear()
@@ -426,44 +438,48 @@ class SiliconSaber:
                 layer_list.append(layer.name())
         self.dlgcommit.layerList.addItems(layer_list)
         
-        # show the dialog
+        drivers = [
+            "SQL Server",
+            "SQL Native Client",
+            "SQL Server Native Client 10.0",
+            "SQL Server Native Client 11.0",
+            "ODBC Driver 11 for SQL Server",
+            "ODBC Driver 13 for SQL Server",
+        ]
+        self.dlgcommit.driverList.addItems(drivers)
+        self.dlgcommit.driverList.setCurrentIndex(5)
+        
         self.dlgcommit.show()
-        # Run the dialog event loop
         result = self.dlgcommit.exec_()
-        # See if OK was pressed
         if result:
-            # Do something useful here - delete the line containing pass and
-            # substitute with your code.
-            
-            selectedlayerindex = self.dlgcommit.layerList.currentIndex()
-            selectedLayer = layers[selectedlayerindex]
-            layeruri = selectedLayer.dataProvider().dataSourceUri().split("|")[0]
-            
-            connstring = "DRIVER={ODBC Driver 13 for SQL Server}; SERVER=%s; DATABASE=%s; Trusted_Connection=yes;" % (self.dlgcommit.dbServer.text(), self.dlgcommit.dbName.text())
-            print(connstring)
-            conn = pyodbc.connect(connstring)
-            
-            getlastid = "SELECT Object_ID FROM %s ORDER BY Object_ID DESC;" % self.dlgcommit.tableName.text()
-            row = conn.execute(getlastid).fetchone()
-            if row is None:
-                row = 0
-            else:
-                row = row[0]
-            
-            for feat in selectedLayer.getFeatures():
-                attrs = feat.attributes()
-                attrs[0] = attrs[0] + row
-                print(attrs)
-                attrs = [self.dlgcommit.tableName.text()] + attrs
-                print(attrs)
-                print(len(attrs[:-3]))
-                insertstr = "INSERT INTO %s VALUES(%s,%s,%s,%s,%s,'%s',%s,%s,'%s',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);" % tuple(attrs[:-3])
-                print(insertstr)
-                error = conn.execute(insertstr)
-                print(error)
-            
-            conn.commit()
-            # for row in out:
-                # print(row)
-            
-            
+            try:
+                selectedlayerindex = self.dlgcommit.layerList.currentIndex()
+                selectedLayer = layers[selectedlayerindex]
+                layeruri = selectedLayer.dataProvider().dataSourceUri().split("|")[0]
+                
+                connstring = "DRIVER={ODBC Driver 13 for SQL Server}; SERVER=%s; DATABASE=%s; Trusted_Connection=yes;" % (self.dlgcommit.dbServer.text(), self.dlgcommit.dbName.text())
+                print(connstring)
+                conn = pyodbc.connect(connstring)
+                
+                getlastid = "SELECT Object_ID FROM %s ORDER BY Object_ID DESC;" % self.dlgcommit.tableName.text()
+                row = conn.execute(getlastid).fetchone()
+                if row is None:
+                    row = 0
+                else:
+                    row = row[0]
+                
+                for feat in selectedLayer.getFeatures():
+                    attrs = feat.attributes()
+                    attrs[0] = attrs[0] + row
+                    attrs = [self.dlgcommit.tableName.text()] + attrs
+                    insertstr = "INSERT INTO %s VALUES(%s,%s,%s,%s,%s,'%s',%s,%s,%s,'%s',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);" % tuple(attrs[:-3])
+                    error = conn.execute(insertstr)
+                
+                conn.commit()
+                
+                self.iface.messageBar().pushMessage("INFO", "Commit to main table is successful!", 
+                    level=QgsMessageBar.INFO)
+            except Exception, e:
+                errormsg = "Commit to main table failed! %s" % str(e)
+                self.iface.messageBar().pushMessage("ERROR", errormsg, 
+                    level=QgsMessageBar.CRITICAL)
