@@ -1,0 +1,17 @@
+<RCC>
+    <qresource prefix="/plugins/SiliconSaber" >
+        <file>calculator.png</file>
+    </qresource>
+    <qresource prefix="/plugins/SiliconSaber" >
+        <file>layers.png</file>
+    </qresource>
+    <qresource prefix="/plugins/SiliconSaber" >
+        <file>import.png</file>
+    </qresource>
+    <qresource prefix="/plugins/SiliconSaber" >
+        <file>export.png</file>
+    </qresource>
+    <qresource prefix="/plugins/SiliconSaber" >
+        <file>database.png</file>
+    </qresource>
+</RCC>
