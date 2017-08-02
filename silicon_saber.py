@@ -28,6 +28,7 @@ from qgis.gui import QgsMessageBar
 import subprocess
 import os, sys
 import pyodbc
+import glob
 
 # Initialize Qt resources from file resources.py
 import resources
@@ -76,20 +77,24 @@ class SiliconSaber:
         
         self.column_names = ["id", "mapId", "layer", "level", "active", "vertices", "numVert", "elev",
             "centerGvt", "ombb", "orient", "desc", "access", "color", "trnp", "outline", "scaling", 
-            "name", "number", "geoId", "roleId", "funcId", "area", "length", "centroid"]
+            "name", "number", "geoId", "roleId", "funcId"]
+            # , "area", "length"]
             
-        self.column_types = [QVariant.Int, QVariant.Int, QVariant.Int, QVariant.Int, QVariant.Int,
+        self.column_types = [QVariant.Int, QVariant.String, QVariant.String, QVariant.Int, QVariant.Int,
             QVariant.String, QVariant.Int, QVariant.Double, QVariant.String, QVariant.String, QVariant.Double, 
             QVariant.String, QVariant.Double, QVariant.String, QVariant.Int, QVariant.Double,
             QVariant.Double, QVariant.String, QVariant.Int, QVariant.Int, QVariant.Int, 
-            QVariant.Int, QVariant.Double, QVariant.Double, QVariant.String]
+            QVariant.Int]
+            # , QVariant.Double, QVariant.Double]
             
-        self.column_stypes = ["integer", "integer", "integer", "integer", "integer", "string", "integer",
+        self.column_stypes = ["integer", "string", "string", "integer", "integer", "string", "integer",
             "double", "string", "string", "double", "string", "double", "string", "integer", "double", "double", "string", 
-            "integer", "integer", "integer", "integer", "double", "double", "string"]
+            "integer", "integer", "integer", "integer", "double"]
+            # , "double", "string"]
             
-        self.col_len = [10, 10, 10, 10, 10, 1000, 10, 20, 100, 1000, 20, 100, 20, 100, 10, 20, 20, 100,
-            10, 10, 10, 10, 20, 20, 100]
+        self.col_len = [10, 100, 100, 10, 10, 254, 10, 20, 100, 254, 20, 100, 20, 100, 10, 20, 20, 100,
+            10, 10, 10, 10]
+            # , 20, 20]
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
@@ -309,6 +314,13 @@ class SiliconSaber:
                 # Update attribute value per feature
                 selectedLayer.startEditing()
                 count = 0
+                
+                project = QgsProject.instance()
+                color = selectedLayer.rendererV2().symbols()[0].color().getRgb()
+                # print(color)
+                # symbol.setColor(QColor.fromRgb(50,50,250))
+                
+                
                 for feat in selectedLayer.getFeatures():
                     count += 1
                     id = feat.id()
@@ -316,14 +328,27 @@ class SiliconSaber:
                         selectedLayer.changeAttributeValue(id, self.column_names.index("id"), count)
                     selectedLayer.changeAttributeValue(id, self.column_names.index("vertices"), 
                         str(feat.geometry().asPolygon()[0]))
+                    # print(len(str(feat.geometry().asPolygon()[0])))
                     selectedLayer.changeAttributeValue(id, self.column_names.index("numVert"), 
                         len(feat.geometry().asPolygon()[0]))
-                    selectedLayer.changeAttributeValue(id, self.column_names.index("area"), 
-                        feat.geometry().area())
-                    selectedLayer.changeAttributeValue(id, self.column_names.index("length"), 
-                        feat.geometry().length())
-                    selectedLayer.changeAttributeValue(id, self.column_names.index("centroid"), 
+                    # selectedLayer.changeAttributeValue(id, self.column_names.index("area"), 
+                        # feat.geometry().area())
+                    # selectedLayer.changeAttributeValue(id, self.column_names.index("length"), 
+                        # feat.geometry().length())
+                    selectedLayer.changeAttributeValue(id, self.column_names.index("centerGvt"), 
                         str(feat.geometry().centroid().asPoint()))
+                    selectedLayer.changeAttributeValue(id, self.column_names.index("layer"), 
+                        selectedLayer.name())
+                    selectedLayer.changeAttributeValue(id, self.column_names.index("mapId"), 
+                        project.fileName())
+                    selectedLayer.changeAttributeValue(id, self.column_names.index("active"), 
+                        "TRUE")
+                    selectedLayer.changeAttributeValue(id, self.column_names.index("trnp"), 
+                        50)
+                    selectedLayer.changeAttributeValue(id, self.column_names.index("scaling"), 
+                        1)
+                    selectedLayer.changeAttributeValue(id, self.column_names.index("color"), 
+                        str(color))
                 
                 selectedLayer.commitChanges()
                 
@@ -361,20 +386,28 @@ class SiliconSaber:
         layer_list = ["Point", "LineString", "Polygon"]
         self.dlgcreate.layerList.addItems(layer_list)
         
+        # File name for temporary shapefile
+        cur_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tempfiles")
+        os.chdir(cur_dir)
+        files = [i for i in glob.glob('layer_*.shp')]
+        self.count = len(files)
+        self.count += 1
+        
+        layername = "Layer %d" % self.count
+        self.dlgcreate.layerName.setText(layername)
+        filename = "%s.shp" % layername.replace(" ", "_").lower()
+        
+        dir_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tempfiles", filename)
         self.dlgcreate.show()
+        
         result = self.dlgcreate.exec_()
         
-        # File name for temporary shapefile
-        filename = "temp_%d.shp" % self.count
-        self.count += 1
-        dir_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tempfiles", filename)
-
         if result:
             try:
                 # Create temporary layer in memory
                 selectedvector = self.dlgcreate.layerList.currentText()
                 vlayerstring = "%s?crs=epsg:4326" %  selectedvector
-                vl = QgsVectorLayer(vlayerstring, "Layer %d" % self.count, "memory")
+                vl = QgsVectorLayer(vlayerstring, layername, "memory")
                 
                 # Create fields if not yet there
                 pr = vl.dataProvider()
@@ -393,14 +426,15 @@ class SiliconSaber:
                 error = QgsVectorFileWriter.writeAsVectorFormat(vl, dir_path, "CP1250", None, 
                             "ESRI Shapefile")
                 
-                vl = QgsVectorLayer(dir_path, "Layer %d" % self.count, "ogr")
+                vl = QgsVectorLayer(dir_path, self.dlgcreate.layerName.text(), "ogr")
+                # print(vl.name())
                 pr = vl.dataProvider()
                 QgsMapLayerRegistry.instance().addMapLayer(vl)
-                self.iface.messageBar().pushMessage("INFO", "Layer %d is created" % self.count, 
+                self.iface.messageBar().pushMessage("INFO", layername, 
                     level=QgsMessageBar.INFO)
                 
             except Exception, e:
-                errormsg = "Create Layer Failed! %s" % str(e)
+                errormsg = "Layer name/filename %s is already in the directory. Please provide a different name." % layername
                 self.iface.messageBar().pushMessage("ERROR", errormsg, 
                     level=QgsMessageBar.CRITICAL)
             
@@ -430,6 +464,7 @@ class SiliconSaber:
             
     def commitlayer(self):
         self.dlgcommit.layerList.clear()
+        self.dlgcommit.driverList.clear()
         layers = self.iface.legendInterface().layers()
         layer_list = []
         for layer in layers:
@@ -457,8 +492,8 @@ class SiliconSaber:
                 selectedLayer = layers[selectedlayerindex]
                 layeruri = selectedLayer.dataProvider().dataSourceUri().split("|")[0]
                 
-                connstring = "DRIVER={ODBC Driver 13 for SQL Server}; SERVER=%s; DATABASE=%s; Trusted_Connection=yes;" % (self.dlgcommit.dbServer.text(), self.dlgcommit.dbName.text())
-                print(connstring)
+                selecteddriver = drivers[self.dlgcommit.driverList.currentIndex()]
+                connstring = "DRIVER={%s}; SERVER=%s; DATABASE=%s; Trusted_Connection=yes;" % (selecteddriver, self.dlgcommit.dbServer.text(), self.dlgcommit.dbName.text())
                 conn = pyodbc.connect(connstring)
                 
                 getlastid = "SELECT Object_ID FROM %s ORDER BY Object_ID DESC;" % self.dlgcommit.tableName.text()
@@ -472,12 +507,22 @@ class SiliconSaber:
                     attrs = feat.attributes()
                     attrs[0] = attrs[0] + row
                     attrs = [self.dlgcommit.tableName.text()] + attrs
-                    insertstr = "INSERT INTO %s VALUES(%s,%s,%s,%s,%s,'%s',%s,%s,%s,'%s',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);" % tuple(attrs[:-3])
+                    stringcols = [2,3,6,9,10,14,18]
+                    # print(attrs)
+                    for col in stringcols:
+                        if attrs[col] != NULL:
+                            attrs[col] = "'%s'" % attrs[col]
+                        
+                    # print(attrs)
+                    insertstr = "INSERT INTO %s VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);" % tuple(attrs)                    
+                    # [:-3])
                     error = conn.execute(insertstr)
-                
+
                 conn.commit()
                 
                 self.iface.messageBar().pushMessage("INFO", "Commit to main table is successful!", 
+                    level=QgsMessageBar.INFO)
+                self.iface.messageBar().pushMessage("INFO", connstring, 
                     level=QgsMessageBar.INFO)
             except Exception, e:
                 errormsg = "Commit to main table failed! %s" % str(e)
