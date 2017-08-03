@@ -395,15 +395,16 @@ class SiliconSaber:
         
         layername = "Layer %d" % self.count
         self.dlgcreate.layerName.setText(layername)
-        filename = "%s.shp" % layername.replace(" ", "_").lower()
         
-        dir_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tempfiles", filename)
         self.dlgcreate.show()
         
         result = self.dlgcreate.exec_()
         
         if result:
             try:
+                filename = "%s.shp" % self.dlgcreate.layerName.text().replace(" ", "_").lower()
+                dir_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tempfiles", filename)
+                
                 # Create temporary layer in memory
                 selectedvector = self.dlgcreate.layerList.currentText()
                 vlayerstring = "%s?crs=epsg:4326" %  selectedvector
