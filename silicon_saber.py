@@ -324,8 +324,10 @@ class SiliconSaber:
                 for feat in selectedLayer.getFeatures():
                     count += 1
                     id = feat.id()
-                    if feat["id"] is not None:
-                        selectedLayer.changeAttributeValue(id, self.column_names.index("id"), count)
+                    # if feat["id"] is not None:
+                        # selectedLayer.changeAttributeValue(id, self.column_names.index("id"), count)
+                    if feat["ogc_fid"] is not None:
+                        selectedLayer.changeAttributeValue(id, 0, count)
                     selectedLayer.changeAttributeValue(id, self.column_names.index("vertices"), 
                         str(feat.geometry().asPolygon()[0]))
                     # print(len(str(feat.geometry().asPolygon()[0])))
@@ -342,7 +344,7 @@ class SiliconSaber:
                     selectedLayer.changeAttributeValue(id, self.column_names.index("mapId"), 
                         project.fileName())
                     selectedLayer.changeAttributeValue(id, self.column_names.index("active"), 
-                        "TRUE")
+                        True)
                     selectedLayer.changeAttributeValue(id, self.column_names.index("trnp"), 
                         50)
                     selectedLayer.changeAttributeValue(id, self.column_names.index("scaling"), 
@@ -365,11 +367,12 @@ class SiliconSaber:
                 
                 selectedLayer.startEditing()
                 for feat in vl.getFeatures():
-                    id = feat.id()
+                    id = feat.id() + 1
                     selectedLayer.changeAttributeValue(id, self.column_names.index("ombb"), 
                         str(feat.geometry().asPolygon()[0]))
                     selectedLayer.changeAttributeValue(id, self.column_names.index("orient"),
                         feat["ANGLE"])
+                    # print(id, feat["ANGLE"])
 
                 selectedLayer.commitChanges()
             
@@ -402,7 +405,8 @@ class SiliconSaber:
         
         if result:
             try:
-                filename = "%s.shp" % self.dlgcreate.layerName.text().replace(" ", "_").lower()
+                # filename = "%s.shp" % self.dlgcreate.layerName.text().replace(" ", "_").lower()
+                filename = "%s.sqlite" % self.dlgcreate.layerName.text().replace(" ", "_").lower()
                 dir_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tempfiles", filename)
                 
                 # Create temporary layer in memory
@@ -414,18 +418,24 @@ class SiliconSaber:
                 pr = vl.dataProvider()
                 fieldnames = [field.name() for field in pr.fields()]
                 for col_idx in range(0, len(self.column_names)):
-                    if col_idx not in fieldnames:
-                        field = QgsField(self.column_names[col_idx], self.column_types[col_idx], 
-                                self.column_stypes[col_idx], self.col_len[col_idx], 3)
-                        pr.addAttributes([field])
+                    if col_idx == 0:
+                        pass
+                    else:
+                        if col_idx not in fieldnames:
+                            field = QgsField(self.column_names[col_idx], self.column_types[col_idx], 
+                                    self.column_stypes[col_idx], self.col_len[col_idx], 3)
+                            pr.addAttributes([field])
                 vl.updateFields()
                 
                 if os.path.isfile(dir_path):
                     os.remove(dir_path)
                 
                 # Save memory layer as shapefile
-                error = QgsVectorFileWriter.writeAsVectorFormat(vl, dir_path, "CP1250", None, 
-                            "ESRI Shapefile")
+                # error = QgsVectorFileWriter.writeAsVectorFormat(vl, dir_path, "CP1250", None, 
+                            # "ESRI Shapefile")
+                            
+                error = QgsVectorFileWriter.writeAsVectorFormat(vl, dir_path, "utf-8", None,
+                            "SQLite", False, None, ["SPATIALITE=YES",])
                 
                 vl = QgsVectorLayer(dir_path, self.dlgcreate.layerName.text(), "ogr")
                 # print(vl.name())
@@ -514,9 +524,10 @@ class SiliconSaber:
                         if attrs[col] != NULL:
                             attrs[col] = "'%s'" % attrs[col]
                         
-                    # print(attrs)
+                    print(attrs)
                     insertstr = "INSERT INTO %s VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);" % tuple(attrs)                    
                     # [:-3])
+                    print(insertstr)
                     error = conn.execute(insertstr)
 
                 conn.commit()
