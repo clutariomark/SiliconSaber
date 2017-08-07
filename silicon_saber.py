@@ -320,10 +320,11 @@ class SiliconSaber:
                 # print(color)
                 # symbol.setColor(QColor.fromRgb(50,50,250))
                 
-                
+                feat_id = []
                 for feat in selectedLayer.getFeatures():
                     count += 1
                     id = feat.id()
+                    feat_id.append(id)
                     # if feat["id"] is not None:
                         # selectedLayer.changeAttributeValue(id, self.column_names.index("id"), count)
                     if feat["ogc_fid"] is not None:
@@ -344,7 +345,7 @@ class SiliconSaber:
                     selectedLayer.changeAttributeValue(id, self.column_names.index("mapId"), 
                         project.fileName())
                     selectedLayer.changeAttributeValue(id, self.column_names.index("active"), 
-                        True)
+                        1)
                     selectedLayer.changeAttributeValue(id, self.column_names.index("trnp"), 
                         50)
                     selectedLayer.changeAttributeValue(id, self.column_names.index("scaling"), 
@@ -353,6 +354,7 @@ class SiliconSaber:
                         str(color))
                 
                 selectedLayer.commitChanges()
+                print(feat_id)
                 
                 # Computation of OMBB
                 by_feature = True
@@ -367,12 +369,12 @@ class SiliconSaber:
                 
                 selectedLayer.startEditing()
                 for feat in vl.getFeatures():
-                    id = feat.id() + 1
-                    selectedLayer.changeAttributeValue(id, self.column_names.index("ombb"), 
+                    id = feat.id()
+                    selectedLayer.changeAttributeValue(feat_id[id], self.column_names.index("ombb"), 
                         str(feat.geometry().asPolygon()[0]))
-                    selectedLayer.changeAttributeValue(id, self.column_names.index("orient"),
+                    selectedLayer.changeAttributeValue(feat_id[id], self.column_names.index("orient"),
                         feat["ANGLE"])
-                    # print(id, feat["ANGLE"])
+                    print(id, feat["ANGLE"])
 
                 selectedLayer.commitChanges()
             
@@ -507,15 +509,17 @@ class SiliconSaber:
                 connstring = "DRIVER={%s}; SERVER=%s; DATABASE=%s; Trusted_Connection=yes;" % (selecteddriver, self.dlgcommit.dbServer.text(), self.dlgcommit.dbName.text())
                 conn = pyodbc.connect(connstring)
                 
-                getlastid = "SELECT Object_ID FROM %s ORDER BY Object_ID DESC;" % self.dlgcommit.tableName.text()
-                row = conn.execute(getlastid).fetchone()
+                getlastid = "SELECT Object_ID, Object_Layer FROM %s ORDER BY Object_ID DESC;" % self.dlgcommit.tableName.text()
+                row = conn.execute(getlastid).fetchall()
+                print(row)
                 if row is None:
                     row = 0
                 else:
-                    row = row[0]
+                    row = row[0][0]
                 
                 for feat in selectedLayer.getFeatures():
                     attrs = feat.attributes()
+                    print((attrs[0], attrs[2]))
                     attrs[0] = attrs[0] + row
                     attrs = [self.dlgcommit.tableName.text()] + attrs
                     stringcols = [2,3,6,9,10,14,18]
@@ -524,10 +528,10 @@ class SiliconSaber:
                         if attrs[col] != NULL:
                             attrs[col] = "'%s'" % attrs[col]
                         
-                    print(attrs)
+                    # print(attrs)
                     insertstr = "INSERT INTO %s VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);" % tuple(attrs)                    
                     # [:-3])
-                    print(insertstr)
+                    # print(insertstr)
                     error = conn.execute(insertstr)
 
                 conn.commit()
