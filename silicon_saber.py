@@ -325,19 +325,15 @@ class SiliconSaber:
                     count += 1
                     id = feat.id()
                     feat_id.append(id)
-                    # if feat["id"] is not None:
-                        # selectedLayer.changeAttributeValue(id, self.column_names.index("id"), count)
+                    
                     if feat["ogc_fid"] is not None:
                         selectedLayer.changeAttributeValue(id, 0, count)
                     selectedLayer.changeAttributeValue(id, self.column_names.index("vertices"), 
                         str(feat.geometry().asPolygon()[0]))
-                    # print(len(str(feat.geometry().asPolygon()[0])))
+
                     selectedLayer.changeAttributeValue(id, self.column_names.index("numVert"), 
                         len(feat.geometry().asPolygon()[0]))
-                    # selectedLayer.changeAttributeValue(id, self.column_names.index("area"), 
-                        # feat.geometry().area())
-                    # selectedLayer.changeAttributeValue(id, self.column_names.index("length"), 
-                        # feat.geometry().length())
+
                     selectedLayer.changeAttributeValue(id, self.column_names.index("centerGvt"), 
                         str(feat.geometry().centroid().asPoint()))
                     selectedLayer.changeAttributeValue(id, self.column_names.index("layer"), 
@@ -354,7 +350,6 @@ class SiliconSaber:
                         str(color))
                 
                 selectedLayer.commitChanges()
-                print(feat_id)
                 
                 # Computation of OMBB
                 by_feature = True
@@ -374,11 +369,9 @@ class SiliconSaber:
                         str(feat.geometry().asPolygon()[0]))
                     selectedLayer.changeAttributeValue(feat_id[id], self.column_names.index("orient"),
                         feat["ANGLE"])
-                    print(id, feat["ANGLE"])
 
                 selectedLayer.commitChanges()
             
-                # QgsMapLayerRegistry.instance().addMapLayer(vl)
                 self.iface.messageBar().pushMessage("INFO", "Computation is done!", 
                     level=QgsMessageBar.INFO)
             except Exception, e:
@@ -407,7 +400,6 @@ class SiliconSaber:
         
         if result:
             try:
-                # filename = "%s.shp" % self.dlgcreate.layerName.text().replace(" ", "_").lower()
                 filename = "%s.sqlite" % self.dlgcreate.layerName.text().replace(" ", "_").lower()
                 dir_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tempfiles", filename)
                 
@@ -431,16 +423,11 @@ class SiliconSaber:
                 
                 if os.path.isfile(dir_path):
                     os.remove(dir_path)
-                
-                # Save memory layer as shapefile
-                # error = QgsVectorFileWriter.writeAsVectorFormat(vl, dir_path, "CP1250", None, 
-                            # "ESRI Shapefile")
                             
                 error = QgsVectorFileWriter.writeAsVectorFormat(vl, dir_path, "utf-8", None,
                             "SQLite", False, None, ["SPATIALITE=YES",])
                 
                 vl = QgsVectorLayer(dir_path, self.dlgcreate.layerName.text(), "ogr")
-                # print(vl.name())
                 pr = vl.dataProvider()
                 QgsMapLayerRegistry.instance().addMapLayer(vl)
                 self.iface.messageBar().pushMessage("INFO", layername, 
@@ -508,37 +495,66 @@ class SiliconSaber:
                 selecteddriver = drivers[self.dlgcommit.driverList.currentIndex()]
                 connstring = "DRIVER={%s}; SERVER=%s; DATABASE=%s; Trusted_Connection=yes;" % (selecteddriver, self.dlgcommit.dbServer.text(), self.dlgcommit.dbName.text())
                 conn = pyodbc.connect(connstring)
+                    
+                cols = ["Map_ID", "Object_Level", 
+                    "Object_Active", "Object_Vertices", "Object_NumVertices",
+                    "Object_Elev", "Object_Center_Gvt", "Object_OMBB", "Object_Orientation",
+                    "Object_Descriptor", "Object_Access", "Object_Color", "Object_Trnp", 
+                    "Object_Outline", "Object_Scaling", "Object_Name", "Object_Number",
+                    "Object_Geo_ID", "Object_Role_ID", "Object_Func_ID"]
                 
-                getlastid = "SELECT Object_ID, Object_Layer FROM %s ORDER BY Object_ID DESC;" % self.dlgcommit.tableName.text()
-                row = conn.execute(getlastid).fetchall()
-                print(row)
-                if row is None:
-                    row = 0
-                else:
-                    row = row[0][0]
-                
+                updated = []
                 for feat in selectedLayer.getFeatures():
                     attrs = feat.attributes()
-                    print((attrs[0], attrs[2]))
-                    attrs[0] = attrs[0] + row
-                    attrs = [self.dlgcommit.tableName.text()] + attrs
-                    stringcols = [2,3,6,9,10,14,18]
-                    # print(attrs)
-                    for col in stringcols:
-                        if attrs[col] != NULL:
-                            attrs[col] = "'%s'" % attrs[col]
-                        
-                    # print(attrs)
-                    insertstr = "INSERT INTO %s VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);" % tuple(attrs)                    
-                    # [:-3])
-                    # print(insertstr)
-                    error = conn.execute(insertstr)
+                    id = attrs[0]
+                    layer = attrs[2]
+                    primary_key = (self.dlgcommit.tableName.text(), id, layer)
+                    sql_string = "SELECT Object_ID, Object_Layer FROM %s WHERE Object_ID = %d and Object_Layer = '%s';" % primary_key
+                    row = conn.execute(sql_string).fetchone()
 
+                    if row is None:
+                        attrs = [self.dlgcommit.tableName.text()] + attrs
+                        stringcols = [2,3,6,9,10,14,18]
+                        for col in stringcols:
+                            if attrs[col] != NULL:
+                                attrs[col] = "'%s'" % attrs[col]
+                        insertstr = "INSERT INTO %s VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);" % tuple(attrs)   
+                        error = conn.execute(insertstr)
+
+                    else:
+                        updatestr = "UPDATE %s SET " % self.dlgcommit.tableName.text()
+                        del attrs[0]
+                        del attrs[1]
+                        
+                        stringcols = [0,3,6,7,11]
+                        
+                        for i in range(0, len(attrs)):
+                            if i in stringcols:
+                                attrs[i] = "'%s'" % attrs[i]
+                            updatestr = updatestr + "%s = %s" % (cols[i], attrs[i])
+                            if i == len(attrs)-1:
+                                updatestr = updatestr + " "
+                            else:
+                                updatestr = updatestr + ", "
+                        
+                        updatestr = updatestr + "WHERE Object_ID = %d and Object_Layer = '%s';" % (id, layer)
+                        primary_key = list(primary_key)
+                        primary_key.pop(0)
+                        updated.append(primary_key)
+                        error = conn.execute(updatestr)
+                
+                test = str(updated)
+                if len(updated) != 0:
+                    warningstring = ""
+                    for item in updated:
+                        warningstring = warningstring + "ID: %d, Layer: %s was updated\n" % tuple(item)
+                        
+                    self.iface.messageBar().pushMessage("WARNING", "The following features already exist! %s " % warningstring,  
+                        level=QgsMessageBar.WARNING)
+                        
                 conn.commit()
                 
                 self.iface.messageBar().pushMessage("INFO", "Commit to main table is successful!", 
-                    level=QgsMessageBar.INFO)
-                self.iface.messageBar().pushMessage("INFO", connstring, 
                     level=QgsMessageBar.INFO)
             except Exception, e:
                 errormsg = "Commit to main table failed! %s" % str(e)
