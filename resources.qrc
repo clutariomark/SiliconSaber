@@ -14,4 +14,10 @@
     <qresource prefix="/plugins/SiliconSaber" >
         <file>database.png</file>
     </qresource>
+    <qresource prefix="/plugins/SiliconSaber" >
+        <file>link.png</file>
+    </qresource>
+    <qresource prefix="/plugins/SiliconSaber" >
+        <file>data-network.png</file>
+    </qresource>
 </RCC>

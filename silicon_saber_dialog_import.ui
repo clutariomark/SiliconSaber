@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>400</width>
-    <height>151</height>
+    <width>387</width>
+    <height>167</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -91,13 +91,13 @@
     <string>Table Name</string>
    </property>
   </widget>
-  <widget class="QLineEdit" name="tableName">
+  <widget class="QComboBox" name="tableName">
    <property name="geometry">
     <rect>
      <x>170</x>
      <y>80</y>
      <width>191</width>
-     <height>20</height>
+     <height>22</height>
     </rect>
    </property>
   </widget>

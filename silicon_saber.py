@@ -95,6 +95,22 @@ class SiliconSaber:
         self.col_len = [10, 100, 100, 10, 10, 254, 10, 20, 100, 254, 20, 100, 20, 100, 10, 20, 20, 100,
             10, 10, 10, 10]
             # , 20, 20]
+        
+        self.drivers = [
+            "SQL Server",
+            "SQL Native Client",
+            "SQL Server Native Client 10.0",
+            "SQL Server Native Client 11.0",
+            "ODBC Driver 11 for SQL Server",
+            "ODBC Driver 13 for SQL Server",
+        ]
+        
+        self.server = ""
+        self.database = ""
+        self.tables = []
+        self.selecteddrivername = ""
+        
+        self.functionIndex = 0
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
@@ -168,6 +184,7 @@ class SiliconSaber:
         self.dlgcreate = SiliconSaberDialogCreate()
         self.dlgimport = SiliconSaberDialogImport()
         self.dlgcommit = SiliconSaberDialogCommit()
+        self.dlgconnect = SiliconSaberDialogConnect()
 
         icon = QIcon(icon_path)
         action = QAction(icon, text, parent)
@@ -200,13 +217,21 @@ class SiliconSaber:
         icon_path3 = ':/plugins/SiliconSaber/export.png'
         icon_path4 = ':/plugins/SiliconSaber/database.png'
         icon_path5 = ':/plugins/SiliconSaber/import.png'
+        icon_path6 = ':/plugins/SiliconSaber/link.png'
+        icon_path7 = ':/plugins/SiliconSaber/data-network.png'
+        
+        
+        self.add_action(
+            icon_path7,
+            text=self.tr(u'Connect Database'),
+            callback=self.connect,
+            parent=self.iface.mainWindow())
         
         self.add_action(
             icon_path1,
             text=self.tr(u'Create New Layer'),
             callback=self.create,
             parent=self.iface.mainWindow())
-            
             
         self.add_action(
             icon_path2,
@@ -254,6 +279,9 @@ class SiliconSaber:
                 layer_list.append(layer.name())
         self.dlg.layerList.addItems(layer_list)
         
+        self.dlg.dbServer.setText(self.server)
+        self.dlg.dbName.setText(self.database)
+        
         self.dlg.show()
         result = self.dlg.exec_()
         
@@ -289,176 +317,306 @@ class SiliconSaber:
                 layer_list.append(layer.name())
         self.dlgcompute.layerList.addItems(layer_list)
         
-        # show the dialog and wait if OK is pressed
-        self.dlgcompute.show()
-        result = self.dlgcompute.exec_()
+        self.dlgcompute.functionTable.clear()
+        self.dlgcompute.functionTable.addItems(self.tables)
+        
+        if self.functionIndex != 0:
+            self.dlgcompute.functionTable.setCurrentIndex(self.functionIndex)
+        
+        connstring = "DRIVER={%s}; SERVER=%s; DATABASE=%s; Trusted_Connection=yes;" % (self.selecteddrivername, self.server, self.database)
+        
+        if self.selecteddrivername == "" or self.server == "" or self.database == "":
+            self.iface.messageBar().pushMessage("WARNING", "Connect to database first!", 
+                    level=QgsMessageBar.WARNING)
+        else:
+            conn = pyodbc.connect(connstring)
+        
+        
+            # show the dialog and wait if OK is pressed
+            self.dlgcompute.show()
+            result = self.dlgcompute.exec_()
 
-        if result:
-            try:
-                selectedlayerindex = self.dlgcompute.layerList.currentIndex()
-                selectedLayer = layers[selectedlayerindex]
-                
-                pr = selectedLayer.dataProvider()
-                
-                fieldnames = [field.name() for field in pr.fields()]
-                
-                # Create fields if not yet there
-                for col_idx in range(0, len(self.column_names)):
-                    if fieldnames[col_idx] not in fieldnames:
-                        field = QgsField(self.column_names[col_idx], self.column_types[col_idx], 
-                                self.column_stypes[col_idx], self.col_len[col_idx], 3)
-                        pr.addAttributes([field])
+            if result:
+                try:
+                    selectedlayerindex = self.dlgcompute.layerList.currentIndex()
+                    selectedLayer = layers[selectedlayerindex]
                     
-                selectedLayer.updateFields()
-                
-                # Update attribute value per feature
-                selectedLayer.startEditing()
-                count = 0
-                
-                project = QgsProject.instance()
-                color = selectedLayer.rendererV2().symbols()[0].color().getRgb()
-                # print(color)
-                # symbol.setColor(QColor.fromRgb(50,50,250))
-                
-                feat_id = []
-                for feat in selectedLayer.getFeatures():
-                    count += 1
-                    id = feat.id()
-                    feat_id.append(id)
+                    pr = selectedLayer.dataProvider()
                     
-                    if feat["ogc_fid"] is not None:
-                        selectedLayer.changeAttributeValue(id, 0, count)
-                    selectedLayer.changeAttributeValue(id, self.column_names.index("vertices"), 
-                        str(feat.geometry().asPolygon()[0]))
+                    fieldnames = [field.name() for field in pr.fields()]
+                    
+                    # Create fields if not yet there
+                    for col_idx in range(0, len(self.column_names)):
+                        if fieldnames[col_idx] not in fieldnames:
+                            field = QgsField(self.column_names[col_idx], self.column_types[col_idx], 
+                                    self.column_stypes[col_idx], self.col_len[col_idx], 3)
+                            pr.addAttributes([field])
+                        
+                    selectedLayer.updateFields()
+                    
+                    # Update attribute value per feature
+                    selectedLayer.startEditing()
+                    count = 0
+                    
+                    project = QgsProject.instance()
+                    color = selectedLayer.rendererV2().symbols()[0].color().getRgb()
+                    # print(color)
+                    # symbol.setColor(QColor.fromRgb(50,50,250))
+                    
+                    feat_id = []
+                    for feat in selectedLayer.getFeatures():
+                        count += 1
+                        id = feat.id()
+                        feat_id.append(id)
+                        
+                        if feat["ogc_fid"] is not None:
+                            selectedLayer.changeAttributeValue(id, 0, count)
+                        selectedLayer.changeAttributeValue(id, self.column_names.index("vertices"), 
+                            str(feat.geometry().asPolygon()[0]))
 
-                    selectedLayer.changeAttributeValue(id, self.column_names.index("numVert"), 
-                        len(feat.geometry().asPolygon()[0]))
+                        selectedLayer.changeAttributeValue(id, self.column_names.index("numVert"), 
+                            len(feat.geometry().asPolygon()[0]))
 
-                    selectedLayer.changeAttributeValue(id, self.column_names.index("centerGvt"), 
-                        str(feat.geometry().centroid().asPoint()))
-                    selectedLayer.changeAttributeValue(id, self.column_names.index("layer"), 
-                        selectedLayer.name())
-                    selectedLayer.changeAttributeValue(id, self.column_names.index("mapId"), 
-                        project.fileName())
-                    selectedLayer.changeAttributeValue(id, self.column_names.index("active"), 
-                        1)
-                    selectedLayer.changeAttributeValue(id, self.column_names.index("trnp"), 
-                        50)
-                    selectedLayer.changeAttributeValue(id, self.column_names.index("scaling"), 
-                        1)
-                    selectedLayer.changeAttributeValue(id, self.column_names.index("color"), 
-                        str(color))
-                
-                selectedLayer.commitChanges()
-                
-                # Computation of OMBB
-                by_feature = True
-                dir_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tempfiles",
-                           "ombb.shp")
-                selectedUri = selectedLayer.dataProvider().dataSourceUri().split("|")[0]
-                
-                output = processing.runalg("qgis:orientedminimumboundingbox", selectedUri, by_feature,
-                         dir_path)
-                         
-                vl = QgsVectorLayer(dir_path, "OMBB Output", "ogr")
-                
-                selectedLayer.startEditing()
-                for feat in vl.getFeatures():
-                    id = feat.id()
-                    selectedLayer.changeAttributeValue(feat_id[id], self.column_names.index("ombb"), 
-                        str(feat.geometry().asPolygon()[0]))
-                    selectedLayer.changeAttributeValue(feat_id[id], self.column_names.index("orient"),
-                        feat["ANGLE"])
+                        selectedLayer.changeAttributeValue(id, self.column_names.index("centerGvt"), 
+                            str(feat.geometry().centroid().asPoint()))
+                        selectedLayer.changeAttributeValue(id, self.column_names.index("layer"), 
+                            selectedLayer.name())
+                        selectedLayer.changeAttributeValue(id, self.column_names.index("mapId"), 
+                            project.fileName())
+                        selectedLayer.changeAttributeValue(id, self.column_names.index("active"), 
+                            1)
+                        selectedLayer.changeAttributeValue(id, self.column_names.index("trnp"), 
+                            50)
+                        selectedLayer.changeAttributeValue(id, self.column_names.index("scaling"), 
+                            1)
+                        selectedLayer.changeAttributeValue(id, self.column_names.index("color"), 
+                            str(color))
+                    
+                    selectedLayer.commitChanges()
+                    
+                    # Computation of OMBB
+                    by_feature = True
+                    dir_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tempfiles",
+                               "ombb.shp")
+                    selectedUri = selectedLayer.dataProvider().dataSourceUri().split("|")[0]
+                    
+                    output = processing.runalg("qgis:orientedminimumboundingbox", selectedUri, by_feature,
+                             dir_path)
+                             
+                    vl = QgsVectorLayer(dir_path, "OMBB Output", "ogr")
+                    
+                    selectedLayer.startEditing()
+                    for feat in vl.getFeatures():
+                        id = feat.id()
+                        selectedLayer.changeAttributeValue(feat_id[id], self.column_names.index("ombb"), 
+                            str(feat.geometry().asPolygon()[0]))
+                        selectedLayer.changeAttributeValue(feat_id[id], self.column_names.index("orient"),
+                            feat["ANGLE"])
 
-                selectedLayer.commitChanges()
+                    selectedLayer.commitChanges()
+                    
+                    functions = conn.execute("SELECT * FROM %s;" % self.tables[self.dlgcompute.functionTable.currentIndex()])
             
-                self.iface.messageBar().pushMessage("INFO", "Computation is done!", 
-                    level=QgsMessageBar.INFO)
-            except Exception, e:
-                errormsg = "There is an error in the computation! %s" % str(e)
-                self.iface.messageBar().pushMessage("ERROR", errormsg, 
-                    level=QgsMessageBar.CRITICAL)
+                    valuemap = {}
+                    for func in functions:
+                        valuemap[func[1]] = func[0]
+                    
+                    valueindex = selectedLayer.fieldNameIndex("funcId")
+                    selectedLayer.setEditorWidgetV2( valueindex, 'ValueMap' )
+                    selectedLayer.setEditorWidgetV2Config( valueindex, valuemap )
+                    selectedLayer.updateFields()
+                
+                    self.iface.messageBar().pushMessage("INFO", "Computation is done!", 
+                        level=QgsMessageBar.INFO)
+                except Exception, e:
+                    errormsg = "There is an error in the computation! %s" % str(e)
+                    self.iface.messageBar().pushMessage("ERROR", errormsg, 
+                        level=QgsMessageBar.CRITICAL)
+                        
+            conn.close()
                 
     def create(self):
         self.dlgcreate.layerList.clear()
         layer_list = ["Point", "LineString", "Polygon"]
         self.dlgcreate.layerList.addItems(layer_list)
+        self.dlgcreate.layerList.setCurrentIndex(2)
         
-        # File name for temporary shapefile
-        cur_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tempfiles")
-        os.chdir(cur_dir)
-        files = [i for i in glob.glob('layer_*.shp')]
-        self.count = len(files)
-        self.count += 1
+        self.dlgcreate.functionTable.clear()
+        self.dlgcreate.functionTable.addItems(self.tables)
         
-        layername = "Layer %d" % self.count
-        self.dlgcreate.layerName.setText(layername)
+        connstring = "DRIVER={%s}; SERVER=%s; DATABASE=%s; Trusted_Connection=yes;" % (self.selecteddrivername, self.server, self.database)
         
-        self.dlgcreate.show()
-        
-        result = self.dlgcreate.exec_()
-        
-        if result:
-            try:
-                filename = "%s.sqlite" % self.dlgcreate.layerName.text().replace(" ", "_").lower()
-                dir_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tempfiles", filename)
-                
-                # Create temporary layer in memory
-                selectedvector = self.dlgcreate.layerList.currentText()
-                vlayerstring = "%s?crs=epsg:4326" %  selectedvector
-                vl = QgsVectorLayer(vlayerstring, layername, "memory")
-                
-                # Create fields if not yet there
-                pr = vl.dataProvider()
-                fieldnames = [field.name() for field in pr.fields()]
-                for col_idx in range(0, len(self.column_names)):
-                    if col_idx == 0:
-                        pass
-                    else:
-                        if col_idx not in fieldnames:
-                            field = QgsField(self.column_names[col_idx], self.column_types[col_idx], 
-                                    self.column_stypes[col_idx], self.col_len[col_idx], 3)
-                            pr.addAttributes([field])
-                vl.updateFields()
-                
-                if os.path.isfile(dir_path):
-                    os.remove(dir_path)
-                            
-                error = QgsVectorFileWriter.writeAsVectorFormat(vl, dir_path, "utf-8", None,
-                            "SQLite", False, None, ["SPATIALITE=YES",])
-                
-                vl = QgsVectorLayer(dir_path, self.dlgcreate.layerName.text(), "ogr")
-                pr = vl.dataProvider()
-                QgsMapLayerRegistry.instance().addMapLayer(vl)
-                self.iface.messageBar().pushMessage("INFO", layername, 
-                    level=QgsMessageBar.INFO)
-                
-            except Exception, e:
-                errormsg = "Layer name/filename %s is already in the directory. Please provide a different name." % layername
-                self.iface.messageBar().pushMessage("ERROR", errormsg, 
-                    level=QgsMessageBar.CRITICAL)
+        if self.selecteddrivername == "" or self.server == "" or self.database == "":
+            self.iface.messageBar().pushMessage("WARNING", "Connect to database first!", 
+                    level=QgsMessageBar.WARNING)
+        else:
+            conn = pyodbc.connect(connstring)
+
+            # File name for temporary shapefile
+            cur_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tempfiles")
+            os.chdir(cur_dir)
+            files = [i for i in glob.glob('layer_*.shp')]
+            self.count = len(files)
+            self.count += 1
+            
+            layername = "Layer %d" % self.count
+            self.dlgcreate.layerName.setText(layername)
+            
+            self.dlgcreate.show()
+            
+            result = self.dlgcreate.exec_()
+            
+            if result:
+                try:
+                    self.functionIndex = self.dlgcreate.functionTable.currentIndex()
+                    
+                    layername = self.dlgcreate.layerName.text()
+                    filename = "%s.sqlite" % self.dlgcreate.layerName.text().replace(" ", "_").lower()
+                    dir_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tempfiles", filename)
+                    
+                    # Create temporary layer in memory
+                    selectedvector = self.dlgcreate.layerList.currentText()
+                    vlayerstring = "%s?crs=epsg:4326" %  selectedvector
+                    vl = QgsVectorLayer(vlayerstring, layername, "memory")
+                    
+                    # Create fields if not yet there
+                    pr = vl.dataProvider()
+                    fieldnames = [field.name() for field in pr.fields()]
+                    for col_idx in range(0, len(self.column_names)):
+                        if col_idx == 0:
+                            pass
+                        else:
+                            if col_idx not in fieldnames:
+                                field = QgsField(self.column_names[col_idx], self.column_types[col_idx], 
+                                        self.column_stypes[col_idx], self.col_len[col_idx], 3)
+                                pr.addAttributes([field])
+                    vl.updateFields()
+                    
+                    if os.path.isfile(dir_path):
+                        os.remove(dir_path)
+                                
+                    error = QgsVectorFileWriter.writeAsVectorFormat(vl, dir_path, "utf-8", None,
+                                "SQLite", False, None, ["SPATIALITE=YES",])
+                    
+                    vl = QgsVectorLayer(dir_path, self.dlgcreate.layerName.text(), "ogr")
+                    pr = vl.dataProvider()
+                    QgsMapLayerRegistry.instance().addMapLayer(vl)
+                    
+                    functions = conn.execute("SELECT * FROM %s;" % self.tables[self.dlgcreate.functionTable.currentIndex()])
+            
+                    valuemap = {}
+                    for func in functions:
+                        valuemap[func[1]] = func[0]
+                    
+                    valueindex = vl.fieldNameIndex("funcId")
+                    vl.setEditorWidgetV2( valueindex, 'ValueMap' )
+                    vl.setEditorWidgetV2Config( valueindex, valuemap )
+                    vl.updateFields()
+                    
+                    self.iface.messageBar().pushMessage("INFO", layername, 
+                        level=QgsMessageBar.INFO)
+                    
+                except Exception, e:
+                    errormsg = "Layer name/filename %s is already in the directory. Please provide a different name." % layername
+                    print(e)
+                    self.iface.messageBar().pushMessage("ERROR", errormsg, 
+                        level=QgsMessageBar.CRITICAL)
+            conn.close()
             
     def importtable(self):     
-        self.dlgimport.show()
-        result = self.dlgimport.exec_()
+        
+        if self.selecteddrivername == "" or self.server == "" or self.database == "":
+            self.iface.messageBar().pushMessage("WARNING", "Connect to database first!", 
+                    level=QgsMessageBar.WARNING)
+        else:
+            connstring = "DRIVER={%s}; SERVER=%s; DATABASE=%s; Trusted_Connection=yes;" % (self.selecteddrivername, self.server, self.database)
+
+            conn = pyodbc.connect(connstring)
+            self.tables = []
+            tables = conn.execute("SELECT TABLE_NAME FROM %s.INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE';" % self.database).fetchall()
+            for tab in tables:
+                self.tables.append(tab[0])
+            
+            conn.commit()
+            conn.close()
+        
+            self.dlgimport.tableName.clear()
+            self.dlgimport.tableName.addItems(self.tables)
+            self.dlgimport.tableName.setCurrentIndex(1)
+            
+            self.dlgimport.dbServer.setText(self.server)
+            self.dlgimport.dbName.setText(self.database)
+            
+            self.dlgimport.show()
+            result = self.dlgimport.exec_()
+            
+            if result:
+                try:
+                    
+                    selectedtable = self.tables[self.dlgimport.tableName.currentIndex()]
+                    uri = "MSSQL:server=%s;database=%s;tables=%s;trusted_connection=yes" % (
+                          self.dlgimport.dbServer.text(), self.dlgimport.dbName.text(), 
+                          selectedtable)
+
+                    vl = QgsVectorLayer(uri, selectedtable, "ogr")                
+                    
+                    if vl.isValid():
+                        self.iface.messageBar().pushMessage("INFO", "Import table is successful!", 
+                            level=QgsMessageBar.INFO)
+                        QgsMapLayerRegistry.instance().addMapLayer(vl)
+                    else:
+                        self.iface.messageBar().pushMessage("ERROR", "Import table failed!", 
+                            level=QgsMessageBar.CRITICAL)
+                
+                except Exception, e:
+                    errormsg = "Import table failed! %s" % str(e)
+                    self.iface.messageBar().pushMessage("ERROR", errormsg, 
+                        level=QgsMessageBar.CRITICAL)
+                    
+                    
+    def connect(self):
+        self.dlgconnect.driverList.clear()
+        self.dlgconnect.driverList.addItems(self.drivers)
+        self.dlgconnect.driverList.setCurrentIndex(5)
+        self.tables = []
+        
+        self.dlgconnect.show()
+        result = self.dlgconnect.exec_()
+        
         if result:
             try:
-                uri = "MSSQL:server=%s;database=%s;tables=%s;trusted_connection=yes" % (
-                      self.dlgimport.dbServer.text(), self.dlgimport.dbName.text(), 
-                      self.dlgimport.tableName.text())
-
-                vl = QgsVectorLayer(uri, self.dlgimport.tableName.text(), "ogr")                
+                self.selecteddrivername = self.drivers[self.dlgconnect.driverList.currentIndex()]
+                self.server = self.dlgconnect.dbServer.text()
+                self.database = self.dlgconnect.dbName.text()
                 
-                if vl.isValid():
-                    self.iface.messageBar().pushMessage("INFO", "Import table is successful!", 
-                        level=QgsMessageBar.INFO)
-                    QgsMapLayerRegistry.instance().addMapLayer(vl)
+                if self.selecteddrivername == "":
+                    self.iface.messageBar().pushMessage("WARNING", "Please select a drivername.", 
+                        level=QgsMessageBar.WARNING)
+                elif self.server == "":
+                    self.iface.messageBar().pushMessage("WARNING", "Please enter the database server.", 
+                        level=QgsMessageBar.WARNING)
+                elif self.database == "":
+                    self.iface.messageBar().pushMessage("WARNING", "Please enter the database name.", 
+                        level=QgsMessageBar.WARNING)
                 else:
-                    self.iface.messageBar().pushMessage("ERROR", "Import table failed!", 
-                        level=QgsMessageBar.CRITICAL)
+                    
+                    connstring = "DRIVER={%s}; SERVER=%s; DATABASE=%s; Trusted_Connection=yes;" % (self.selecteddrivername, self.server, self.database)
+
+                    conn = pyodbc.connect(connstring)
+                    
+                    tables = conn.execute("SELECT TABLE_NAME FROM %s.INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE';" % self.database).fetchall()
+                    for tab in tables:
+                        self.tables.append(tab[0])                
+                    
+                    conn.commit()
+                    
+                    conn.close()
+                    self.iface.messageBar().pushMessage("INFO", "Connected to %s database" % self.database, 
+                        level=QgsMessageBar.INFO)
             
             except Exception, e:
-                errormsg = "Import table failed! %s" % str(e)
+                print(str(e))
+                errormsg = "Connection Failed!"
                 self.iface.messageBar().pushMessage("ERROR", errormsg, 
                     level=QgsMessageBar.CRITICAL)
             
@@ -473,16 +631,12 @@ class SiliconSaber:
                 layer_list.append(layer.name())
         self.dlgcommit.layerList.addItems(layer_list)
         
-        drivers = [
-            "SQL Server",
-            "SQL Native Client",
-            "SQL Server Native Client 10.0",
-            "SQL Server Native Client 11.0",
-            "ODBC Driver 11 for SQL Server",
-            "ODBC Driver 13 for SQL Server",
-        ]
-        self.dlgcommit.driverList.addItems(drivers)
+        self.dlgcommit.driverList.addItems(self.drivers)
         self.dlgcommit.driverList.setCurrentIndex(5)
+        
+        self.dlgcommit.dbName.setText(self.database)
+        self.dlgcommit.dbServer.setText(self.server)
+        self.dlgcommit.tableName.setText("MapObjects")
         
         self.dlgcommit.show()
         result = self.dlgcommit.exec_()
@@ -492,7 +646,7 @@ class SiliconSaber:
                 selectedLayer = layers[selectedlayerindex]
                 layeruri = selectedLayer.dataProvider().dataSourceUri().split("|")[0]
                 
-                selecteddriver = drivers[self.dlgcommit.driverList.currentIndex()]
+                selecteddriver = self.drivers[self.dlgcommit.driverList.currentIndex()]
                 connstring = "DRIVER={%s}; SERVER=%s; DATABASE=%s; Trusted_Connection=yes;" % (selecteddriver, self.dlgcommit.dbServer.text(), self.dlgcommit.dbName.text())
                 conn = pyodbc.connect(connstring)
                     
@@ -553,6 +707,7 @@ class SiliconSaber:
                         level=QgsMessageBar.WARNING)
                         
                 conn.commit()
+                conn.close()
                 
                 self.iface.messageBar().pushMessage("INFO", "Commit to main table is successful!", 
                     level=QgsMessageBar.INFO)
