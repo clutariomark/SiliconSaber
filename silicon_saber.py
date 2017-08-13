@@ -111,6 +111,7 @@ class SiliconSaber:
         self.selecteddrivername = ""
         
         self.functionIndex = 0
+        self.columns = {}
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
@@ -256,7 +257,20 @@ class SiliconSaber:
             text=self.tr(u'Import Table'),
             callback=self.importtable,
             parent=self.iface.mainWindow())
-
+    
+    def createfunctionid(self):
+        columns = self.columns[self.tables[self.dlgcreate.functionTable.currentIndex()]]
+        self.dlgcreate.desc_col.clear()
+        self.dlgcreate.val_col.clear()
+        self.dlgcreate.desc_col.addItems(columns)
+        self.dlgcreate.val_col.addItems(columns)
+        
+    def computefunctionid(self):
+        columns = self.columns[self.tables[self.functionIndex]]
+        self.dlgcompute.desc_col.clear()
+        self.dlgcompute.val_col.clear()
+        self.dlgcompute.desc_col.addItems(columns)
+        self.dlgcompute.val_col.addItems(columns)
 
     def unload(self):
         """Removes the plugin menu item and icon from QGIS GUI."""
@@ -320,6 +334,8 @@ class SiliconSaber:
         self.dlgcompute.functionTable.clear()
         self.dlgcompute.functionTable.addItems(self.tables)
         
+        self.computefunctionid()
+        
         if self.functionIndex != 0:
             self.dlgcompute.functionTable.setCurrentIndex(self.functionIndex)
         
@@ -334,6 +350,9 @@ class SiliconSaber:
         
             # show the dialog and wait if OK is pressed
             self.dlgcompute.show()
+            
+            self.dlgcompute.functionTable.currentIndexChanged.connect(self.computefunctionid)
+            
             result = self.dlgcompute.exec_()
 
             if result:
@@ -418,8 +437,11 @@ class SiliconSaber:
                     functions = conn.execute("SELECT * FROM %s;" % self.tables[self.dlgcompute.functionTable.currentIndex()])
             
                     valuemap = {}
-                    for func in functions:
-                        valuemap[func[1]] = func[0]
+                    desc_col = self.dlgcompute.desc_col.currentIndex()
+                    val_col = self.dlgcompute.val_col.currentIndex()
+                    
+                    for func in functions:                        
+                        valuemap[func[desc_col]] = func[val_col]
                     
                     valueindex = selectedLayer.fieldNameIndex("funcId")
                     selectedLayer.setEditorWidgetV2( valueindex, 'ValueMap' )
@@ -444,6 +466,8 @@ class SiliconSaber:
         self.dlgcreate.functionTable.clear()
         self.dlgcreate.functionTable.addItems(self.tables)
         
+        self.createfunctionid()
+        
         connstring = "DRIVER={%s}; SERVER=%s; DATABASE=%s; Trusted_Connection=yes;" % (self.selecteddrivername, self.server, self.database)
         
         if self.selecteddrivername == "" or self.server == "" or self.database == "":
@@ -463,6 +487,8 @@ class SiliconSaber:
             self.dlgcreate.layerName.setText(layername)
             
             self.dlgcreate.show()
+            
+            self.dlgcreate.functionTable.currentIndexChanged.connect(self.createfunctionid)
             
             result = self.dlgcreate.exec_()
             
@@ -505,8 +531,11 @@ class SiliconSaber:
                     functions = conn.execute("SELECT * FROM %s;" % self.tables[self.dlgcreate.functionTable.currentIndex()])
             
                     valuemap = {}
-                    for func in functions:
-                        valuemap[func[1]] = func[0]
+                    desc_col = self.dlgcreate.desc_col.currentIndex()
+                    val_col = self.dlgcreate.val_col.currentIndex()
+                    
+                    for func in functions:                        
+                        valuemap[func[desc_col]] = func[val_col]
                     
                     valueindex = vl.fieldNameIndex("funcId")
                     vl.setEditorWidgetV2( valueindex, 'ValueMap' )
@@ -605,10 +634,17 @@ class SiliconSaber:
                     conn = pyodbc.connect(connstring)
                     
                     tables = conn.execute("SELECT TABLE_NAME FROM %s.INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE';" % self.database).fetchall()
-                    for tab in tables:
-                        self.tables.append(tab[0])                
                     
                     conn.commit()
+                    
+                    for tab in tables:
+                        self.tables.append(tab[0])
+                        self.columns[tab[0]] = []
+                        colstring = "SELECT COLUMN_NAME FROM %s.INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '%s';" % (self.database, tab[0])
+                        cols = conn.execute(colstring).fetchall()
+                        conn.commit()
+                        for col in cols:
+                            self.columns[tab[0]].append(col[0])
                     
                     conn.close()
                     self.iface.messageBar().pushMessage("INFO", "Connected to %s database" % self.database, 
