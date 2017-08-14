@@ -482,13 +482,13 @@ class SiliconSaber:
                     selectedLayer.commitChanges()
                     
                     # Computation of OMBB
-                    by_feature = True
-                    dir_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tempfiles",
-                               "ombb.shp")
-                    selectedUri = selectedLayer.dataProvider().dataSourceUri().split("|")[0]
+                    # by_feature = True
+                    # dir_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tempfiles",
+                               # "ombb.shp")
+                    # selectedUri = selectedLayer.dataProvider().dataSourceUri().split("|")[0]
                     
-                    output = processing.runalg("qgis:orientedminimumboundingbox", selectedUri, by_feature,
-                             dir_path)
+                    # output = processing.runalg("qgis:orientedminimumboundingbox", selectedUri, by_feature,
+                             # dir_path)
                         
                     table = self.tables[self.dlgcompute.functionTable.currentIndex()]
                     desc_col = self.desc_columns[table][self.dlgcompute.desc_col.currentIndex()]
