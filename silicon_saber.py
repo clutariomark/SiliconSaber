@@ -29,6 +29,7 @@ import subprocess
 import os, sys
 import pyodbc
 import glob
+from math import degrees, atan2
 
 # Initialize Qt resources from file resources.py
 import resources
@@ -111,7 +112,8 @@ class SiliconSaber:
         self.selecteddrivername = ""
         
         self.functionIndex = 0
-        self.columns = {}
+        self.desc_columns = {}
+        self.vals_columns = {}
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
@@ -259,18 +261,66 @@ class SiliconSaber:
             parent=self.iface.mainWindow())
     
     def createfunctionid(self):
-        columns = self.columns[self.tables[self.dlgcreate.functionTable.currentIndex()]]
+        desc_columns = self.desc_columns[self.tables[self.dlgcreate.functionTable.currentIndex()]]
+        vals_columns = self.vals_columns[self.tables[self.dlgcreate.functionTable.currentIndex()]]
         self.dlgcreate.desc_col.clear()
         self.dlgcreate.val_col.clear()
-        self.dlgcreate.desc_col.addItems(columns)
-        self.dlgcreate.val_col.addItems(columns)
+        self.dlgcreate.desc_col.addItems(desc_columns)
+        self.dlgcreate.val_col.addItems(vals_columns)
         
     def computefunctionid(self):
-        columns = self.columns[self.tables[self.functionIndex]]
+        desc_columns = self.desc_columns[self.tables[self.dlgcompute.functionTable.currentIndex()]]
+        vals_columns = self.vals_columns[self.tables[self.dlgcompute.functionTable.currentIndex()]]
         self.dlgcompute.desc_col.clear()
         self.dlgcompute.val_col.clear()
-        self.dlgcompute.desc_col.addItems(columns)
-        self.dlgcompute.val_col.addItems(columns)
+        self.dlgcompute.desc_col.addItems(desc_columns)
+        self.dlgcompute.val_col.addItems(vals_columns)
+        
+    def GetAngleOfLineBetweenTwoPoints(self, p1, p2, angle_unit="degrees"):
+        xDiff = p2.x() - p1.x()
+        yDiff = p2.y() - p1.y()
+        if angle_unit == "radians":
+            return atan2(yDiff, xDiff)
+        else:
+            return degrees(atan2(yDiff, xDiff))
+        
+    def OMBBox(self, geom):
+        g = geom.convexHull()
+
+        if g.type() != QGis.Polygon:
+            return None, None, None, None, None, None
+        r = g.asPolygon()[0]
+
+        p0 = QgsPoint(r[0][0], r[0][1])
+
+        i = 0
+        l = len(r)
+        OMBBox = QgsGeometry()
+        gBBox = g.boundingBox()
+        OMBBox_area = gBBox.height() * gBBox.width()
+        OMBBox_angle = 0
+        OMBBox_width = 0
+        OMBBox_heigth = 0
+        OMBBox_perim = 0
+        while i < l - 1:
+            x = QgsGeometry(g)
+            angle = self.GetAngleOfLineBetweenTwoPoints(r[i], r[i + 1])
+            x.rotate(angle, p0)
+            bbox = x.boundingBox()
+            bb = QgsGeometry.fromWkt(bbox.asWktPolygon())
+            bb.rotate(-angle, p0)
+
+            areabb = bb.area()
+            if areabb <= OMBBox_area:
+                OMBBox = QgsGeometry(bb)
+                OMBBox_area = areabb
+                OMBBox_angle = angle
+                OMBBox_width = bbox.width()
+                OMBBox_heigth = bbox.height()
+                OMBBox_perim = 2 * OMBBox_width + 2 * OMBBox_heigth
+            i += 1
+
+        return OMBBox, OMBBox_area, OMBBox_perim, OMBBox_angle, OMBBox_width, OMBBox_heigth
 
     def unload(self):
         """Removes the plugin menu item and icon from QGIS GUI."""
@@ -322,22 +372,6 @@ class SiliconSaber:
 
     def compute(self):
         """Run method that performs all the real work"""
-        self.dlgcompute.layerList.clear()
-        layers = self.iface.legendInterface().layers()
-        layer_list = []
-        for layer in layers:
-            layerType = layer.type()
-            if layerType == QgsMapLayer.VectorLayer:
-                layer_list.append(layer.name())
-        self.dlgcompute.layerList.addItems(layer_list)
-        
-        self.dlgcompute.functionTable.clear()
-        self.dlgcompute.functionTable.addItems(self.tables)
-        
-        self.computefunctionid()
-        
-        if self.functionIndex != 0:
-            self.dlgcompute.functionTable.setCurrentIndex(self.functionIndex)
         
         connstring = "DRIVER={%s}; SERVER=%s; DATABASE=%s; Trusted_Connection=yes;" % (self.selecteddrivername, self.server, self.database)
         
@@ -346,7 +380,20 @@ class SiliconSaber:
                     level=QgsMessageBar.WARNING)
         else:
             conn = pyodbc.connect(connstring)
-        
+            
+            self.dlgcompute.layerList.clear()
+            layers = self.iface.legendInterface().layers()
+            layer_list = []
+            for layer in layers:
+                layerType = layer.type()
+                if layerType == QgsMapLayer.VectorLayer:
+                    layer_list.append(layer.name())
+            self.dlgcompute.layerList.addItems(layer_list)
+            
+            self.dlgcompute.functionTable.clear()
+            self.dlgcompute.functionTable.addItems(self.tables)
+            
+            self.computefunctionid()       
         
             # show the dialog and wait if OK is pressed
             self.dlgcompute.show()
@@ -379,8 +426,6 @@ class SiliconSaber:
                     
                     project = QgsProject.instance()
                     color = selectedLayer.rendererV2().symbols()[0].color().getRgb()
-                    # print(color)
-                    # symbol.setColor(QColor.fromRgb(50,50,250))
                     
                     feat_id = []
                     for feat in selectedLayer.getFeatures():
@@ -388,13 +433,28 @@ class SiliconSaber:
                         id = feat.id()
                         feat_id.append(id)
                         
-                        if feat["ogc_fid"] is not None:
+                        if feat["ogc_fid"] is None:
                             selectedLayer.changeAttributeValue(id, 0, count)
-                        selectedLayer.changeAttributeValue(id, self.column_names.index("vertices"), 
-                            str(feat.geometry().asPolygon()[0]))
+                            
+                        if selectedLayer.wkbType() == QGis.WKBPolygon:
+                            selectedLayer.changeAttributeValue(id, self.column_names.index("vertices"), 
+                                str(feat.geometry().asPolygon()[0]))
 
-                        selectedLayer.changeAttributeValue(id, self.column_names.index("numVert"), 
-                            len(feat.geometry().asPolygon()[0]))
+                            selectedLayer.changeAttributeValue(id, self.column_names.index("numVert"), 
+                                len(feat.geometry().asPolygon()[0]))
+                        
+                        elif selectedLayer.wkbType() == QGis.WKBLineString:
+                            selectedLayer.changeAttributeValue(id, self.column_names.index("vertices"), 
+                                str(feat.geometry().asPolyline()))
+
+                            selectedLayer.changeAttributeValue(id, self.column_names.index("numVert"), 
+                                len(feat.geometry().asPolyline()))
+                                
+                        elif selectedLayer.wkbType() == QGis.WKBPoint:
+                            selectedLayer.changeAttributeValue(id, self.column_names.index("vertices"), 
+                                str(feat.geometry().asPoint()))
+
+                            selectedLayer.changeAttributeValue(id, self.column_names.index("numVert"), 1)
 
                         selectedLayer.changeAttributeValue(id, self.column_names.index("centerGvt"), 
                             str(feat.geometry().centroid().asPoint()))
@@ -410,6 +470,14 @@ class SiliconSaber:
                             1)
                         selectedLayer.changeAttributeValue(id, self.column_names.index("color"), 
                             str(color))
+                            
+                        ombb = self.OMBBox(feat.geometry())
+                        
+                        if ombb[0] is not None:
+                            selectedLayer.changeAttributeValue(id, self.column_names.index("ombb"), 
+                                str(ombb[0].asPolygon()[0]))
+                            selectedLayer.changeAttributeValue(id, self.column_names.index("orient"),
+                                ombb[3])
                     
                     selectedLayer.commitChanges()
                     
@@ -421,27 +489,18 @@ class SiliconSaber:
                     
                     output = processing.runalg("qgis:orientedminimumboundingbox", selectedUri, by_feature,
                              dir_path)
-                             
-                    vl = QgsVectorLayer(dir_path, "OMBB Output", "ogr")
+                        
+                    table = self.tables[self.dlgcompute.functionTable.currentIndex()]
+                    desc_col = self.desc_columns[table][self.dlgcompute.desc_col.currentIndex()]
+                    val_col = self.vals_columns[table][self.dlgcompute.val_col.currentIndex()]
                     
-                    selectedLayer.startEditing()
-                    for feat in vl.getFeatures():
-                        id = feat.id()
-                        selectedLayer.changeAttributeValue(feat_id[id], self.column_names.index("ombb"), 
-                            str(feat.geometry().asPolygon()[0]))
-                        selectedLayer.changeAttributeValue(feat_id[id], self.column_names.index("orient"),
-                            feat["ANGLE"])
-
-                    selectedLayer.commitChanges()
+                    selectstring = "SELECT %s, %s FROM %s;" % (desc_col, val_col, table)
                     
-                    functions = conn.execute("SELECT * FROM %s;" % self.tables[self.dlgcompute.functionTable.currentIndex()])
+                    functions = conn.execute(selectstring)
             
-                    valuemap = {}
-                    desc_col = self.dlgcompute.desc_col.currentIndex()
-                    val_col = self.dlgcompute.val_col.currentIndex()
-                    
+                    valuemap = {}                    
                     for func in functions:                        
-                        valuemap[func[desc_col]] = func[val_col]
+                        valuemap[func[0]] = func[1]
                     
                     valueindex = selectedLayer.fieldNameIndex("funcId")
                     selectedLayer.setEditorWidgetV2( valueindex, 'ValueMap' )
@@ -451,6 +510,7 @@ class SiliconSaber:
                     self.iface.messageBar().pushMessage("INFO", "Computation is done!", 
                         level=QgsMessageBar.INFO)
                 except Exception, e:
+                    print(e)
                     errormsg = "There is an error in the computation! %s" % str(e)
                     self.iface.messageBar().pushMessage("ERROR", errormsg, 
                         level=QgsMessageBar.CRITICAL)
@@ -458,16 +518,6 @@ class SiliconSaber:
             conn.close()
                 
     def create(self):
-        self.dlgcreate.layerList.clear()
-        layer_list = ["Point", "LineString", "Polygon"]
-        self.dlgcreate.layerList.addItems(layer_list)
-        self.dlgcreate.layerList.setCurrentIndex(2)
-        
-        self.dlgcreate.functionTable.clear()
-        self.dlgcreate.functionTable.addItems(self.tables)
-        
-        self.createfunctionid()
-        
         connstring = "DRIVER={%s}; SERVER=%s; DATABASE=%s; Trusted_Connection=yes;" % (self.selecteddrivername, self.server, self.database)
         
         if self.selecteddrivername == "" or self.server == "" or self.database == "":
@@ -475,6 +525,16 @@ class SiliconSaber:
                     level=QgsMessageBar.WARNING)
         else:
             conn = pyodbc.connect(connstring)
+            
+            self.dlgcreate.layerList.clear()
+            layer_list = ["Point", "LineString", "Polygon"]
+            self.dlgcreate.layerList.addItems(layer_list)
+            self.dlgcreate.layerList.setCurrentIndex(2)
+            
+            self.dlgcreate.functionTable.clear()
+            self.dlgcreate.functionTable.addItems(self.tables)
+            
+            self.createfunctionid()
 
             # File name for temporary shapefile
             cur_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tempfiles")
@@ -528,14 +588,17 @@ class SiliconSaber:
                     pr = vl.dataProvider()
                     QgsMapLayerRegistry.instance().addMapLayer(vl)
                     
-                    functions = conn.execute("SELECT * FROM %s;" % self.tables[self.dlgcreate.functionTable.currentIndex()])
-            
-                    valuemap = {}
-                    desc_col = self.dlgcreate.desc_col.currentIndex()
-                    val_col = self.dlgcreate.val_col.currentIndex()
+                    table = self.tables[self.dlgcreate.functionTable.currentIndex()]
+                    desc_col = self.desc_columns[table][self.dlgcreate.desc_col.currentIndex()]
+                    val_col = self.vals_columns[table][self.dlgcreate.val_col.currentIndex()]
                     
+                    selectstring = "SELECT %s, %s FROM %s;" % (desc_col, val_col, table)
+                    
+                    functions = conn.execute(selectstring)
+            
+                    valuemap = {}                    
                     for func in functions:                        
-                        valuemap[func[desc_col]] = func[val_col]
+                        valuemap[func[0]] = func[1]
                     
                     valueindex = vl.fieldNameIndex("funcId")
                     vl.setEditorWidgetV2( valueindex, 'ValueMap' )
@@ -606,7 +669,7 @@ class SiliconSaber:
     def connect(self):
         self.dlgconnect.driverList.clear()
         self.dlgconnect.driverList.addItems(self.drivers)
-        self.dlgconnect.driverList.setCurrentIndex(5)
+        self.dlgconnect.driverList.setCurrentIndex(3)
         self.tables = []
         
         self.dlgconnect.show()
@@ -639,12 +702,16 @@ class SiliconSaber:
                     
                     for tab in tables:
                         self.tables.append(tab[0])
-                        self.columns[tab[0]] = []
-                        colstring = "SELECT COLUMN_NAME FROM %s.INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '%s';" % (self.database, tab[0])
+                        self.desc_columns[tab[0]] = []
+                        self.vals_columns[tab[0]] = []
+                        colstring = "SELECT COLUMN_NAME, DATA_TYPE FROM %s.INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '%s';" % (self.database, tab[0])
                         cols = conn.execute(colstring).fetchall()
                         conn.commit()
                         for col in cols:
-                            self.columns[tab[0]].append(col[0])
+                            if col[1] == u'nvarchar':
+                                self.desc_columns[tab[0]].append(col[0])
+                            elif col[1] == u'int':
+                                self.vals_columns[tab[0]].append(col[0])
                     
                     conn.close()
                     self.iface.messageBar().pushMessage("INFO", "Connected to %s database" % self.database, 
@@ -668,7 +735,7 @@ class SiliconSaber:
         self.dlgcommit.layerList.addItems(layer_list)
         
         self.dlgcommit.driverList.addItems(self.drivers)
-        self.dlgcommit.driverList.setCurrentIndex(5)
+        self.dlgcommit.driverList.setCurrentIndex(3)
         
         self.dlgcommit.dbName.setText(self.database)
         self.dlgcommit.dbServer.setText(self.server)
