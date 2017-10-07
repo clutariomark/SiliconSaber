@@ -43,6 +43,9 @@ FORM_CLASS5, _ = uic.loadUiType(os.path.join(
 FORM_CLASS6, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'silicon_saber_dialog_connect.ui'))
 
+FORM_CLASS7, _ = uic.loadUiType(os.path.join(
+    os.path.dirname(__file__), 'silicon_saber_dialog_run_sp.ui'))
+
 class SiliconSaberDialogBase(QtGui.QDialog, FORM_CLASS1):
     def __init__(self, parent=None):
         """Constructor."""
@@ -102,6 +105,17 @@ class SiliconSaberDialogConnect(QtGui.QDialog, FORM_CLASS6):
     def __init__(self, parent=None):
         """Constructor."""
         super(SiliconSaberDialogConnect, self).__init__(parent)
+        # Set up the user interface from Designer.
+        # After setupUI you can access any designer object by doing
+        # self.<objectname>, and you can use autoconnect slots - see
+        # http://qt-project.org/doc/qt-4.8/designer-using-a-ui-file.html
+        # #widgets-and-dialogs-with-auto-connect
+        self.setupUi(self)
+
+class SiliconSaberDialogRunQuery(QtGui.QDialog, FORM_CLASS7):
+    def __init__(self, parent=None):
+        """Constructor."""
+        super(SiliconSaberDialogRunQuery, self).__init__(parent)
         # Set up the user interface from Designer.
         # After setupUI you can access any designer object by doing
         # self.<objectname>, and you can use autoconnect slots - see
