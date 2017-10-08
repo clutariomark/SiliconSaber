@@ -13,6 +13,9 @@
   <property name="windowTitle">
    <string>SiliconSaber - Run Stored Procedure</string>
   </property>
+  <property name="modal">
+   <bool>true</bool>
+  </property>
   <widget class="QDialogButtonBox" name="button_box">
    <property name="geometry">
     <rect>
