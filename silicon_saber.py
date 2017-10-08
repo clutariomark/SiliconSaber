@@ -978,9 +978,8 @@ class SiliconSaber:
                     self.iface.messageBar().pushMessage("WARNING: Cannot execute DROP, DELETE, UPDATE statements", 
                         level=QgsMessageBar.WARNING)
                 else:
-                    queryresult = conn.execute(sqlquery).fetchall()
-
-                    conn.close()             
+                    queryresult = conn.execute(sqlquery)
+                    conn.close()
                     
                     if queryresult:
                         self.iface.messageBar().pushMessage("INFO: Query is successful!", 
