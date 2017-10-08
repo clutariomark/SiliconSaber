@@ -126,7 +126,10 @@ class SiliconSaber:
     def update_layers(self):
         if os.path.isfile("layers.pkl"):
             fileopen = open("layers.pkl", "rb")
-        self.layers = pickle.load(fileopen)
+            self.layers = pickle.load(fileopen)
+        else:
+            fileopen = open("layers.pkl", "wb")
+        
         fileopen.close()
 
     def add_layers(self, layername, functionIndex=0,desc_index=0,vals_index=0):
