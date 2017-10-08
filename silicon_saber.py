@@ -649,7 +649,7 @@ class SiliconSaber:
         # File name for temporary shapefile
         cur_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tempfiles")
         os.chdir(cur_dir)
-        files = [i for i in glob.glob('layer_*.shp')]
+        files = [i for i in glob.glob('Layer *.sqlite')]
         self.count = len(files)
         self.count += 1
         
@@ -664,66 +664,76 @@ class SiliconSaber:
         
         if result:
             try:
-                functionIndex = self.dlgcreate.functionTable.currentIndex()
-                desc_index = self.dlgcreate.desc_col.currentIndex()
-                vals_index = self.dlgcreate.val_col.currentIndex()
                 layername = self.dlgcreate.layerName.text()
-                filename = "%s.sqlite" % self.dlgcreate.layerName.text().replace(" ", "_").lower()
-                dir_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tempfiles", filename)
-                self.add_layers(layername, functionIndex=functionIndex,desc_index=desc_index,vals_index=vals_index)
-                
-                # Create temporary layer in memory
-                selectedvector = self.dlgcreate.layerList.currentText()
-                vlayerstring = "%s?crs=epsg:4326" %  selectedvector
-                vl = QgsVectorLayer(vlayerstring, layername, "memory")
-                
-                # Create fields if not yet there
-                pr = vl.dataProvider()
-                fieldnames = [field.name() for field in pr.fields()]
-                for col_idx in range(0, len(self.column_names)):
-                    if col_idx == 0:
-                        pass
-                    else:
-                        if col_idx not in fieldnames:
-                            field = QgsField(self.column_names[col_idx], self.column_types[col_idx], 
-                                    self.column_stypes[col_idx], self.col_len[col_idx], 3)
-                            pr.addAttributes([field])
-                vl.updateFields()
-                
-                if os.path.isfile(dir_path):
-                    os.remove(dir_path)
-                            
-                error = QgsVectorFileWriter.writeAsVectorFormat(vl, dir_path, "utf-8", None,
-                            "SQLite", False, None, ["SPATIALITE=YES",])
-                
-                vl = QgsVectorLayer(dir_path, self.dlgcreate.layerName.text(), "ogr")
-                pr = vl.dataProvider()
-                QgsMapLayerRegistry.instance().addMapLayer(vl)
-                
-                if connected:
-                    table = self.tables[self.dlgcreate.functionTable.currentIndex()]
-                    desc_col = self.desc_columns[table][self.dlgcreate.desc_col.currentIndex()]
-                    val_col = self.vals_columns[table][self.dlgcreate.val_col.currentIndex()]
-                    
-                    selectstring = "SELECT %s, %s FROM %s;" % (desc_col, val_col, table)
-                    
-                    valuemap = {}
-                    functions = conn.execute(selectstring)
+                legendlayers = []
+                for lyr in self.iface.legendInterface().layers():
+                    layerType = lyr.type()
+                    if layerType == QgsMapLayer.VectorLayer:
+                        legendlayers.append(lyr.name())
 
-                    for func in functions:                        
-                        valuemap[func[0]] = func[1]
-
-                    conn.close()          
-                    valueindex = vl.fieldNameIndex("funcId")
-                    vl.setEditorWidgetV2( valueindex, 'ValueMap' )
-                    vl.setEditorWidgetV2Config( valueindex, valuemap )
+                if layername in legendlayers:
+                    self.iface.messageBar().pushMessage("ERROR: %s already exists. Either select another layer name or delete the layer in the Layer Panel " % layername, 
+                        level=QgsMessageBar.CRITICAL)
+                else:
+                    functionIndex = self.dlgcreate.functionTable.currentIndex()
+                    desc_index = self.dlgcreate.desc_col.currentIndex()
+                    vals_index = self.dlgcreate.val_col.currentIndex()
+                    filename = "%s.sqlite" % self.dlgcreate.layerName.text()
+                    dir_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tempfiles", filename)
+                    self.add_layers(layername, functionIndex=functionIndex,desc_index=desc_index,vals_index=vals_index)
+                    
+                    # Create temporary layer in memory
+                    selectedvector = self.dlgcreate.layerList.currentText()
+                    vlayerstring = "%s?crs=epsg:4326" %  selectedvector
+                    vl = QgsVectorLayer(vlayerstring, layername, "memory")
+                    
+                    # Create fields if not yet there
+                    pr = vl.dataProvider()
+                    fieldnames = [field.name() for field in pr.fields()]
+                    for col_idx in range(0, len(self.column_names)):
+                        if col_idx == 0:
+                            pass
+                        else:
+                            if col_idx not in fieldnames:
+                                field = QgsField(self.column_names[col_idx], self.column_types[col_idx], 
+                                        self.column_stypes[col_idx], self.col_len[col_idx], 3)
+                                pr.addAttributes([field])
                     vl.updateFields()
-                
-                self.iface.messageBar().pushMessage("INFO: Layer %s created!" % layername, 
-                    level=QgsMessageBar.INFO)
+                    
+                    if os.path.isfile(dir_path):
+                        os.remove(dir_path)
+                                
+                    error = QgsVectorFileWriter.writeAsVectorFormat(vl, dir_path, "utf-8", None,
+                                "SQLite", False, None, ["SPATIALITE=YES",])
+                    
+                    vl = QgsVectorLayer(dir_path, self.dlgcreate.layerName.text(), "ogr")
+                    pr = vl.dataProvider()
+                    QgsMapLayerRegistry.instance().addMapLayer(vl)
+                    
+                    if connected:
+                        table = self.tables[self.dlgcreate.functionTable.currentIndex()]
+                        desc_col = self.desc_columns[table][self.dlgcreate.desc_col.currentIndex()]
+                        val_col = self.vals_columns[table][self.dlgcreate.val_col.currentIndex()]
+                        
+                        selectstring = "SELECT %s, %s FROM %s;" % (desc_col, val_col, table)
+                        
+                        valuemap = {}
+                        functions = conn.execute(selectstring)
+
+                        for func in functions:                        
+                            valuemap[func[0]] = func[1]
+
+                        conn.close()          
+                        valueindex = vl.fieldNameIndex("funcId")
+                        vl.setEditorWidgetV2( valueindex, 'ValueMap' )
+                        vl.setEditorWidgetV2Config( valueindex, valuemap )
+                        vl.updateFields()
+                    
+                    self.iface.messageBar().pushMessage("INFO: %s created!" % layername, 
+                        level=QgsMessageBar.INFO)
                 
             except Exception, e:
-                errormsg = "Creation of Layer %s failed." % layername
+                errormsg = "Creation of %s failed." % layername
                 print(e)
                 self.iface.messageBar().pushMessage("ERROR: %s" % errormsg, 
                     level=QgsMessageBar.CRITICAL)
